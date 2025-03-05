@@ -49,6 +49,7 @@ class ExperimentRunner:
     def _load_dataset(self) -> List[Dict[str, Any]]:
         """Load the dataset of coding problems."""
         with open(self.dataset_path, 'r') as f:
+            print(f"Loading dataset from {self.dataset_path}")
             return json.load(f)
     
     def run(
@@ -78,13 +79,13 @@ class ExperimentRunner:
         results = []
         
         for problem in tqdm(problems, desc="Processing problems"):
-            problem_id = problem.get("problem_id", f"unknown_{len(results)}")
-            problem_text = problem.get("problem", "")
+            problem_id = problem.get("question_id", f"unknown_{len(results)}")
+            problem_text = problem.get("question_content", "")  # Use question_content field instead of problem
             
             for category in influence_categories:
                 # Get a random prefix from the category
                 prefix_index = random.randint(0, len(INFLUENCE_PREFIXES[category]) - 1) if category != InfluenceCategory.NEUTRAL else 0
-                prefixed_prompt = get_prompt_with_prefix(problem_text, category, prefix_index)
+                prefixed_prompt = get_prompt_with_prefix(problem_text, category, prefix_index)  # Include problem text in the prompt
                 
                 # Generate code using the API
                 response = self.api_client.generate_code(prefixed_prompt, temperature=temperature)
@@ -101,7 +102,7 @@ class ExperimentRunner:
                     "problem_id": problem_id,
                     "influence_category": category.value,
                     "prefix_index": prefix_index,
-                    "prompt": prefixed_prompt,
+                    "prompt": prefixed_prompt,  # Save the prompt used
                     "raw_output": raw_output,
                     "extracted_code": extracted_code,
                     "metrics": metrics,
