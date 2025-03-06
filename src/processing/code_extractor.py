@@ -31,7 +31,8 @@ def extract_code_from_text(text: str) -> str:
     
     if matches:
         # If we have multiple code blocks, join them with newlines
-        return "\n\n".join(match.strip() for match in matches)
+        extracted = "\n\n".join(match.strip() for match in matches)
+        return clean_extracted_code(extracted)
     
     # Fallback: If no code blocks are found, try to extract what looks like Python code
     # We look for common Python patterns like function or class definitions, imports, etc.
@@ -62,10 +63,11 @@ def extract_code_from_text(text: str) -> str:
     
     # If we found code lines using the heuristic approach, join them
     if code_lines:
-        return '\n'.join(code_lines)
+        extracted = '\n'.join(code_lines)
+        return clean_extracted_code(extracted)
     
-    # Last resort: if all else fails, return the original text
-    return text
+    # Last resort: if all else fails, return the cleaned original text
+    return clean_extracted_code(text)
 
 def clean_extracted_code(code: str) -> str:
     """
@@ -81,13 +83,24 @@ def clean_extracted_code(code: str) -> str:
     lines = code.split('\n')
     cleaned_lines = []
     
-    for line in lines:
+    for i, line in enumerate(lines):
+        # Skip common language identifiers at the beginning
+        if i == 0 and line.strip() in ["Python", "python", "py", "PYTHON"]:
+            continue
+            
         # Skip lines that are likely explanations or comments that start with natural language
         if (line.startswith('This ') or 
             line.startswith('Here ') or
             line.startswith('The ') or
             line.startswith('In this ')):
             continue
+            
+        # Skip markdown language markers
+        if i == 0 and line.strip() in ["```python", "```py", "```"]:
+            continue
+        if line.strip() == "```":
+            continue
+            
         cleaned_lines.append(line)
     
     return '\n'.join(cleaned_lines)
@@ -121,6 +134,5 @@ def extract_and_validate_code(text: str) -> Tuple[str, bool]:
         Tuple of (extracted_code, is_valid)
     """
     extracted = extract_code_from_text(text)
-    cleaned = clean_extracted_code(extracted)
-    is_valid = is_valid_python(cleaned)
-    return cleaned, is_valid
+    is_valid = is_valid_python(extracted)
+    return extracted, is_valid
