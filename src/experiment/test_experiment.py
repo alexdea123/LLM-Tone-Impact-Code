@@ -8,7 +8,7 @@ from src.experiment.prompt_categories import InfluenceCategory
 
 if __name__ == "__main__":
     # Load the LiveCodeBench dataset using HuggingFace data loader
-    dataset = load_dataset("livecodebench/code_generation_lite", split="test[:2]")  # Load a small subset for testing
+    dataset = load_dataset("livecodebench/code_generation_lite", split="test[:2]", trust_remote_code=True)  # Load a small subset for testing
     dataset_path = os.path.join(os.path.dirname(__file__), 'livebench_subset.json')
 
     # Convert dataset to a list of records using pandas
