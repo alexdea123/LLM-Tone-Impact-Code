@@ -26,11 +26,11 @@ def main():
         "--model", "llama3-70b-8192",
         "--scenario", "codegeneration",
         "--evaluate",
-        "--release_version", "release_v3",
+        "--release_version", "release_v4",
         "--use_cache",
         "--n", "10",
         "--start_date", "2024-01-01",
-        "--end_date", "2024-03-01"
+        "--end_date", "2024-12-31"
         # "--end_date", "2024-12-31"
     ]
         

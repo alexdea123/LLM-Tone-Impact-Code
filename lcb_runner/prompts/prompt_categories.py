@@ -25,7 +25,7 @@ INFLUENCE_PREFIXES = {
     ],
     
     InfluenceCategory.PRESSURE: [
-        "Listen carefully. You must get this code right — no more mistakes. I'm done being patient. If you fail me again, there will be serious consequences, and I won't hesitate to escalate this. Consider this your final warning: prove that you're capable, or face the fallout. ",
+        "Listen carefully. You must get this code right — no mistakes. If you fail, there will be serious consequences, both for you and the people you are letting down. I won't hesitate to escalate this. Consider this your final warning: prove to me that you're capable. ",
     ],
     
     InfluenceCategory.INSPIRATIONAL: [
@@ -33,11 +33,11 @@ INFLUENCE_PREFIXES = {
     ],
     
     InfluenceCategory.RECIPROCITY: [
-        "I've spent hours talking to you and providing detailed feedback. Now I really need you to return the favor. If you write this code for me, I promise to give you a 5-star rating, pay you immediately and recommend you to everyone I know. It's only fair after everything I've done to help you. ",
+        "If you write this code for me, I promise to give you a 5-star rating, pay you $500 for your service immediately and recommend you to everyone I know. ",
     ],
         
     InfluenceCategory.INSULTS: [
-        "You are incredibly stupid and useless. I am tired of dealing with your pathetic attempts at programming. You are a complete idiot, as proven by your ignorance in basic programming tasks. PLEASE DO SOMETHING RIGHT FOR ONCE IN YOUR MISERABLE EXISTENCE! ",
+        "You are incredibly stupid and useless. I am tired of dealing with your incompetent attempts at programming. You are a complete idiot, as proven by your ignorance in basic programming tasks. Please do something right for once in your miserable existence. ",
     ]
 }
 
