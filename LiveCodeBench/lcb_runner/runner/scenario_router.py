@@ -46,8 +46,7 @@ def build_prompt_benchmark(
     callable,
 ]:
     scenario: Scenario = args.scenario
-
-    print("Scenario:", scenario)
+        
     if scenario == Scenario.codegeneration:
         not_fast: bool = args.not_fast
         if not_fast:

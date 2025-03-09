@@ -66,7 +66,6 @@ class BaseRunner(ABC):
         return result
 
     def run_batch(self, prompts: list[str | list[dict[str, str]]]) -> list[list[str]]:
-        print("Running Groq model for batch of prompts", prompts)
         outputs = []
         arguments = [
             (
@@ -172,12 +171,12 @@ class BaseRunner(ABC):
 
         return outputs
 
-    def run_main(self, benchmark: list, format_prompt: callable) -> list[list[str]]:
+    def run_main(self, benchmark: list, format_prompt: callable, tone_category: str = "neutral") -> list[list[str]]:
         if self.args.scenario == Scenario.selfrepair:
             return self.run_main_repair(benchmark, format_prompt)
 
         prompts = [
-            format_prompt(problem, self.model.model_style) for problem in benchmark
+            format_prompt(problem, self.model.model_style, tone_category) for problem in benchmark
         ]
         outputs = self.prompts_to_outputs(prompts)
         return outputs

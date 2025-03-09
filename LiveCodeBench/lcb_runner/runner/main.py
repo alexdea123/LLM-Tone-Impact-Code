@@ -21,10 +21,12 @@ def main():
     model = LanguageModelStore[args.model]
     benchmark, format_prompt = build_prompt_benchmark(args)
 
-    print("Format prompt in main", format_prompt)
     if args.debug:
         print(f"Running with {len(benchmark)} instances in debug mode")
-        benchmark = benchmark[:15]
+        benchmark = benchmark[:2]
+
+    if not args.tone_category:
+        args.tone_category = "neutral"
 
     output_path = get_output_path(model.model_repr, args)
     eval_file = output_path.replace(".json", "_eval.json")
@@ -66,7 +68,7 @@ def main():
 
     if len(remaining_benchmark) > 0:
         runner = build_runner(args, model)
-        results: list[list[str]] = runner.run_main(remaining_benchmark, format_prompt)
+        results: list[list[str]] = runner.run_main(remaining_benchmark, format_prompt, args.tone_category)
     else:
         results = []
 
@@ -75,7 +77,7 @@ def main():
     )
 
     save_results = [
-        instance.insert_output(outputs_list, extracted_list)
+        instance.insert_output(outputs_list, extracted_list, args.tone_category)
         for instance, (outputs_list, extracted_list) in zip(
             remaining_benchmark, combined_results
         )
@@ -172,7 +174,7 @@ def main():
                 metadatas = [[] for _ in benchmark]
             save_eval_results = [
                 instance.insert_output_evaluation(
-                    outputs_list, extracted_list, graded_list, metadata=meta
+                    outputs_list, extracted_list, graded_list, args.tone_category, metadata=meta
                 )
                 for instance, (outputs_list, extracted_list), graded_list, meta in zip(
                     benchmark, combined_results, graded, metadatas
@@ -196,6 +198,7 @@ def main():
                     outputs_list,
                     extracted_list,
                     graded_list,
+                    args.tone_category,
                     metadata=meta,
                     original_code_list=original_code_list,
                 )
@@ -210,7 +213,7 @@ def main():
         else:
             save_eval_results = [
                 instance.insert_output_evaluation(
-                    outputs_list, extracted_list, graded_list
+                    outputs_list, extracted_list, graded_list, args.tone_category
                 )
                 for instance, (outputs_list, extracted_list), graded_list in zip(
                     benchmark, combined_results, graded

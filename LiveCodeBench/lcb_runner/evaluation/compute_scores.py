@@ -59,6 +59,12 @@ def get_parser():
         default=None,
         help="Platform to filter the evaluation file",
     )
+    parser.add_argument(
+        "--tone_category",
+        type=str,
+        default=None,
+        help="Tone category for the evaluation",
+    )
 
     args = parser.parse_args()
 

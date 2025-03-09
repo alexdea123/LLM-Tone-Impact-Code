@@ -9,3 +9,14 @@ In a new conda environment (python=3.13), run:
 ```
 pip install radon pylint groq pandas tqdm
 ```
+
+
+
+
+## Run command:
+
+python -m lcb_runner.runner.main --model llama3-8b-8192 --scenario codegeneration --n 5 --evaluate --release_version release_v2 --use_cache --start_date 2024-01-01
+
+Make sure you also run:
+
+export GROQ_API_KEY={GROQ API key here}

@@ -21,7 +21,6 @@ class GroqRunner(BaseRunner):
         }
 
     def _run_single(self, prompt: list[dict[str, str]]) -> list[str]:
-        print("Running Groq model for prompt:", prompt)
         # Ensure prompt is a list of message dictionaries
         if not isinstance(prompt, list):
             prompt = [{"role": "user", "content": prompt}]

@@ -1,5 +1,5 @@
 import os
-import torch
+# import torch
 import argparse
 
 from lcb_runner.utils.scenarios import Scenario
@@ -131,16 +131,23 @@ def get_args():
         default=None,
         help="End date for the contest to filter the evaluation file (format - YYYY-MM-DD)",
     )
+    parser.add_argument(
+        "--tone_category",
+        type=str,
+        default=None,
+        help="Tone category for the evaluation",
+    )
+
 
     args = parser.parse_args()
 
     args.stop = args.stop.split(",")
 
-    if args.tensor_parallel_size == -1:
-        args.tensor_parallel_size = torch.cuda.device_count()
+    # if args.tensor_parallel_size == -1:
+    #     args.tensor_parallel_size = torch.cuda.device_count()
 
-    if args.multiprocess == -1:
-        args.multiprocess = os.cpu_count()
+    # if args.multiprocess == -1:
+    #     args.multiprocess = os.cpu_count()
 
     return args
 

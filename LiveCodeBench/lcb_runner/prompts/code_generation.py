@@ -192,8 +192,30 @@ def get_base_model_question_template_answer(question: CodeGenerationProblem):
 
 
 def format_prompt_generation(
-    question: CodeGenerationProblem, LanguageModelStyle: LMStyle
+    question: CodeGenerationProblem, LanguageModelStyle: LMStyle, tone_category: str = "neutral"
 ) -> str:
+    # Import here to avoid circular imports
+    from lcb_runner.prompts.prompt_categories import InfluenceCategory, get_prompt_with_prefix
+    
+    # Convert string to enum for the tone category
+    try:
+        category = InfluenceCategory(tone_category)
+    except ValueError:
+        # Default to neutral if an invalid category is provided
+        category = InfluenceCategory.NEUTRAL
+
+    if LanguageModelStyle == LMStyle.GroqLLM:
+        # Get the template answer
+        template_answer = get_generic_question_template_answer(question)
+        # Apply the tone prefix
+        modified_template = get_prompt_with_prefix(template_answer, category)
+        
+        chat_messages = [
+            {"role": "system", "content": PromptConstants.SYSTEM_MESSAGE_GENERIC},
+            {"role": "user", "content": modified_template},
+        ]
+        return chat_messages
+
     if LanguageModelStyle in [LMStyle.OpenAIChat, LMStyle.DeepSeekAPI]:
         chat_messages = [
             {
@@ -254,13 +276,6 @@ def format_prompt_generation(
             truncation=False,
             padding=False,
         )
-
-    if LanguageModelStyle == LMStyle.GroqLLM:
-        chat_messages = [
-            {"role": "system", "content": PromptConstants.SYSTEM_MESSAGE_GENERIC},
-            {"role": "user", "content": get_generic_question_template_answer(question)},
-        ]
-        return chat_messages
 
     if LanguageModelStyle == LMStyle.Claude:
         prompt = f"{HUMAN_PROMPT}\n"

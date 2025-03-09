@@ -75,12 +75,13 @@ class CodeGenerationProblem:
 
         self.metadata = json.loads(self.metadata)  # type: ignore
 
-    def insert_output(self, output_list: list[str], code_list: list[str]) -> dict:
+    def insert_output(self, output_list: list[str], code_list: list[str], tone_category="neutral") -> dict:
         return {
             "question_title": self.question_title,
             "question_content": self.question_content,
             "platform": self.platform.value,
             "question_id": self.question_id,
+            "tone_category": tone_category,
             "contest_id": self.contest_id,
             "contest_date": self.contest_date.isoformat(),
             "starter_code": self.starter_code,
@@ -94,9 +95,10 @@ class CodeGenerationProblem:
         output_list: list[str],
         code_list: list[str],
         graded_list: list[bool],
+        tone_category: str = 'neutral',
         **kwargs,
     ) -> dict:
-        output = self.insert_output(output_list, code_list)
+        output = self.insert_output(output_list, code_list, tone_category)
         output["graded_list"] = graded_list
         output["pass@1"] = graded_list.count(True) / len(graded_list)
         for k, v in kwargs.items():
