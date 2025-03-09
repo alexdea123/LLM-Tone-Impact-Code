@@ -30,8 +30,8 @@ def main():
         "--use_cache",
         "--n", "5",
         "--start_date", "2024-01-01",
-        "--end_date", "2024-01-30"
-        # "--end_date", "2024-12-31"
+        # "--end_date", "2024-01-15"
+        "--end_date", "2024-12-31"
     ]
         
     # Get all categories from the enum
