@@ -28,10 +28,10 @@ def main():
         "--evaluate",
         "--release_version", "release_v3",
         "--use_cache",
-        "--n", "5",
+        "--n", "10",
         "--start_date", "2024-01-01",
-        # "--end_date", "2024-01-15"
-        "--end_date", "2024-12-31"
+        "--end_date", "2024-03-01"
+        # "--end_date", "2024-12-31"
     ]
         
     # Get all categories from the enum

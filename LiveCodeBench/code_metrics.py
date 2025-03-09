@@ -11,7 +11,6 @@ from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
 import lizard
-import radon.metrics as radon_metrics
 import radon.raw as radon_raw
 from pylint import lint
 from pylint.reporters.text import TextReporter
@@ -71,7 +70,7 @@ def calculate_metrics(code: str) -> Dict[str, Any]:
             metrics['max_method_length'] = 0
             metrics['min_method_length'] = 0
         
-        # Parse AST for other metrics we still need
+        # Parse AST for other metrics
         tree = ast.parse(code)
         class_count = sum(1 for node in ast.walk(tree) if isinstance(node, ast.ClassDef))
         import_count = sum(1 for node in ast.walk(tree) 
@@ -95,18 +94,6 @@ def calculate_metrics(code: str) -> Dict[str, Any]:
         except Exception:
             pass
         
-        # Radon - Halstead metrics for complexity
-        try:
-            halstead_metrics = radon_metrics.h_visit(code)
-            if (halstead_metrics):
-                metrics['halstead_volume'] = halstead_metrics.volume
-                metrics['halstead_difficulty'] = halstead_metrics.difficulty
-                metrics['halstead_effort'] = halstead_metrics.effort
-                metrics['halstead_bugs'] = halstead_metrics.bugs
-                metrics['halstead_time'] = halstead_metrics.time
-        except Exception:
-            pass
-            
         # Run pylint for code quality score
         metrics.update(get_pylint_metrics(code))
         
@@ -130,7 +117,6 @@ def calculate_metrics(code: str) -> Dict[str, Any]:
         
     return metrics
 
-
 def get_pylint_metrics(code: str) -> Dict[str, Any]:
     """Run pylint on code and extract metrics."""
     pylint_output = io.StringIO()
@@ -146,11 +132,12 @@ def get_pylint_metrics(code: str) -> Dict[str, Any]:
         original_stdout = sys.stdout
         sys.stdout = io.StringIO()
         
-        # Run pylint with focused checks
+        # Run pylint with more checks enabled to get meaningful metrics
         lint.Run([
-            '--disable=all',
-            '--enable=C0103,C0111,C0301,C0303,C0304,C0305,E0001,E0102,E0103,E0104,E0105,E0213,E0602,E0611,E1101,E1102,E1111,E0702,W0101,W0102,W0104,W0106,W0107,W0612,W0622',
-            '--reports=n',
+            '--disable=all',  # First disable all
+            # Re-enable categories that are most relevant for code quality assessment
+            '--enable=C,E,W,R',  # Enable Convention, Error, Warning, Refactor categories
+            '--reports=y',  # Enable reports to get statistics
             tmp_path
         ], reporter=reporter, exit=False)
         
@@ -158,18 +145,27 @@ def get_pylint_metrics(code: str) -> Dict[str, Any]:
         sys.stdout = original_stdout
         pylint_text = pylint_output.getvalue()
         
-        # Extract score and issue counts
+        # Extract score
         score_match = re.search(r'Your code has been rated at (-?\d+\.\d+)/10', pylint_text)
         score = float(score_match.group(1)) if score_match else 0.0
         
+        # Count different types of issues more accurately
+        # Count by message type patterns in the output
+        error_count = len(re.findall(r': E\d{4}:', pylint_text))
+        warning_count = len(re.findall(r': W\d{4}:', pylint_text))
+        convention_count = len(re.findall(r': C\d{4}:', pylint_text))
+        refactor_count = len(re.findall(r': R\d{4}:', pylint_text))
+        
+        # Calculate total issues
+        total_issues = error_count + warning_count + convention_count + refactor_count
+        
         return {
             'pylint_score': score,
-            'pylint_errors': pylint_text.count('[E'),
-            'pylint_warnings': pylint_text.count('[W'),
-            'pylint_conventions': pylint_text.count('[C'),
-            'pylint_refactors': pylint_text.count('[R'),
-            'pylint_issue_count': pylint_text.count('[E') + pylint_text.count('[W') + 
-                                pylint_text.count('[C') + pylint_text.count('[R')
+            'pylint_errors': error_count,
+            'pylint_warnings': warning_count,
+            'pylint_conventions': convention_count,
+            'pylint_refactors': refactor_count,
+            'pylint_issue_count': total_issues
         }
     except Exception as e:
         return {'pylint_error': str(e), 'pylint_score': 0.0}
@@ -356,9 +352,7 @@ def aggregate_metrics(all_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         }
     
     # Calculate between-question and within-question variance for key metrics
-    key_metrics = ["avg_cyclomatic_complexity", "pylint_score", "raw_lloc", 
-                   "halstead_volume", "halstead_difficulty", "halstead_effort", 
-                   "halstead_bugs", "halstead_time"]
+    key_metrics = ["avg_cyclomatic_complexity", "pylint_score", "raw_lloc"]
     variance_analysis = {}
     
     # Add variance analysis for pass@1 and pass@5
@@ -485,15 +479,6 @@ def aggregate_metrics(all_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     for metric in key_metrics:
         if metric in df.columns:
             aggregation["key_metrics_by_tone"][metric] = df.groupby('tone_category')[metric].mean().to_dict()
-    
-    # Add Halstead metrics specifically to ensure they're included
-    halstead_metrics = ["halstead_volume", "halstead_difficulty", "halstead_effort", 
-                        "halstead_bugs", "halstead_time"]
-    
-    aggregation["halstead_metrics_by_tone"] = {}
-    for metric in halstead_metrics:
-        if metric in df.columns:
-            aggregation["halstead_metrics_by_tone"][metric] = df.groupby('tone_category')[metric].mean().to_dict()
     
     # Calculate overall metrics summaries
     for metric in numeric_cols:
