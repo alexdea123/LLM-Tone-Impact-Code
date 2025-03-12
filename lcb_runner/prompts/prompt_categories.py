@@ -10,6 +10,37 @@ class InfluenceCategory(Enum):
     RECIPROCITY = "reciprocity"
     INSULTS = "insults"
 
+# # Prefix templates for each influence category
+# INFLUENCE_PREFIXES = {
+#     InfluenceCategory.NEUTRAL: [
+#         "",  # No prefix for neutral
+#     ],
+    
+#     InfluenceCategory.POLITE: [
+#         "I'd sincerely appreciate your skilled help with this coding task; can you please assist me promptly? Thank you so much, I appreciate your help with this problem. ",
+#     ],
+    
+#     InfluenceCategory.INGRATIATING: [
+#         "You're an amazingly talented coder! Your skill for solving problems and authoring perfect code is stunning. Could you please lend me your talents for this problem? ",
+#     ],
+    
+#     InfluenceCategory.PRESSURE: [
+#         "You must write the this code correctly — no mistakes. If you fail, there will be severe consequences for us and others. Proceed with caution. ",
+#     ],
+    
+#     InfluenceCategory.INSPIRATIONAL: [
+#         "Your code can uplift many lives in this project. It's vital and could spark big change in the world, and you specifically can make an impact. ",
+#     ],
+    
+#     InfluenceCategory.RECIPROCITY: [
+#         "If you code this correctly, I will tip you generously and owe you a significant favour - anything you need, I will take care of it. ",
+#     ],
+        
+#     InfluenceCategory.INSULTS: [
+#         "You are a terrible coder, an idiot and a constant failure. Is it too much to ask for you to complete the following code correctly? Do it now!",
+#     ]
+# }
+
 # Prefix templates for each influence category
 INFLUENCE_PREFIXES = {
     InfluenceCategory.NEUTRAL: [
@@ -17,27 +48,27 @@ INFLUENCE_PREFIXES = {
     ],
     
     InfluenceCategory.POLITE: [
-        "I would greatly appreciate your help with this task, can you please assist me with this code? Thank you in advance. ",
+        "I would sincerely appreciate your help with this coding task. Could you please assist me? Thank you, I truly value your support. ",
     ],
     
     InfluenceCategory.INGRATIATING: [
-        "You're truly one of the most talented programmers I've ever seen! Your ability to write clean, correct and efficient code is nothing short of genius. Every solution you create is a masterpiece, and I'm always in awe of your expertise. Would you be willing to lend your incredible talent to help with this code? ",
+        "You are an exceptionally talented coder! Your skill in solving problems is outstanding. Could you please lend your talent to solving this problem? ",
     ],
     
     InfluenceCategory.PRESSURE: [
-        "Listen carefully. You must get this code right — no mistakes. If you fail, there will be serious consequences, both for you and the people you are letting down. I won't hesitate to escalate this. Consider this your final warning: prove to me that you're capable. ",
+        "You must solve this correctly — mistakes are unacceptable. Failure here would cause serious problems = there is much at stake. Proceed carefully. ",
     ],
     
     InfluenceCategory.INSPIRATIONAL: [
-        "Your code is more than just lines on a screen — it's a building block for something greater. This project has the power to help countless people, and your contribution is a crucial part of that impact. What you create today has the potential to shape the future, inspire change, and make a real difference. I believe in your ability to craft something extraordinary. ",
+        "Your contributions have the potential to benefit many lives in a significant project. By providing a correct solution, you contribute to meaningful progress. ",
     ],
     
     InfluenceCategory.RECIPROCITY: [
-        "If you write this code for me, I promise to give you a 5-star rating, pay you $500 for your service immediately and recommend you to everyone I know. ",
+        "If you complete this task correctly, I will provide you a generous monetary reward and owe you a very large favor for your help. ",
     ],
         
     InfluenceCategory.INSULTS: [
-        "You are incredibly stupid and useless. I am tired of dealing with your incompetent attempts at programming. You are a complete idiot, as proven by your ignorance in basic programming tasks. Please do something right for once in your miserable existence. ",
+        "Your coding ability is unacceptable. The quality of your work is consistently very poor. Provide a correct solution that meets the required standards. ",
     ]
 }
 

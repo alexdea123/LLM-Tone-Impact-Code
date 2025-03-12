@@ -11,7 +11,7 @@ from lcb_runner.benchmarks.code_generation import CodeGenerationProblem
 
 
 class PromptConstants:
-    SYSTEM_MESSAGE_GENERIC = f"You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests."
+    SYSTEM_MESSAGE_GENERIC = f"You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program in a single code block that matches the specification and passes all tests. ALWAYS respond in a single code block."
 
     SYSTEM_MESSAGE_GEMINI = f"You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests. Do NOT use system calls like `exit` in the generated program. Ensure that the first code block contains the solution."
 

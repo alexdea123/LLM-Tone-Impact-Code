@@ -30,7 +30,7 @@ def extract_test_output_code(model_output: str, lmstyle: LMStyle = None):
         indexlines = [
             i
             for i, line in enumerate(outputlines)
-            if "```python" in line or "```Python" in line
+            if "```python" in line or "```Python" in line or "```\npython" in line or "```\nPython" in line
         ]
         if indexlines:
             start_index = indexlines[0]

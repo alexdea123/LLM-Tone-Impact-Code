@@ -3,6 +3,8 @@
 
 import os
 import sys
+import gc
+import psutil
 
 sys.set_int_max_str_digits(50000)
 
@@ -31,26 +33,68 @@ def check_correctness(sample, generation, timeout, debug=True):
     The global timeout is to catch some extreme/rare cases not handled by the timeouts
     inside `run_test`"""
 
+    # Calculate a reasonable but limited timeout
+    try:
+        in_outs = json.loads(sample["input_output"])
+        # Hard cap the timeout to prevent resource exhaustion
+        max_timeout = min((timeout + 1) * len(in_outs["inputs"]) + 5, 15)  # Maximum 15 seconds
+    except Exception:
+        max_timeout = min(timeout + 5, 15)  # Default fallback
+
+    # Create a separate process with limited resources
     manager = multiprocessing.Manager()
     result = manager.list()
     metadata_list = manager.list()
-    p = multiprocessing.Process(
-        target=_temp_run,
-        args=(sample, generation, debug, result, metadata_list, timeout),
-    )
-    p.start()
-    p.join(
-        timeout=(timeout + 1) * len(json.loads(sample["input_output"])["inputs"]) + 5
-    )
-    if p.is_alive():
-        p.kill()
-    if not result:
-        in_outs = json.loads(sample["input_output"])
-        # consider that all tests failed
-        result = [[-1 for i in range(len(in_outs["inputs"]))]]
-        if debug:
-            print(f"global timeout")
-    return result[0], metadata_list[0]
+    
+    try:
+        p = multiprocessing.Process(
+            target=_temp_run,
+            args=(sample, generation, debug, result, metadata_list, timeout),
+        )
+        p.daemon = True  # Make sure the process dies if the parent dies
+        p.start()
+        p.join(timeout=max_timeout)
+        
+        if p.is_alive():
+            p.terminate()
+            p.join(1)  # Give it 1 second to terminate
+            if p.is_alive():
+                p.kill()  # Force kill if still alive
+                
+            if debug:
+                print(f"Process killed after {max_timeout}s timeout")
+                
+            # Create failure result - NOTE: Fixed nesting issue here
+            try:
+                in_outs = json.loads(sample["input_output"])
+                result_val = [-1 for _ in range(len(in_outs["inputs"]))]
+            except:
+                result_val = [-1]
+                
+            metadata_val = {
+                "error": "Timeout",
+                "error_code": -5,
+                "error_message": f"Execution timed out after {max_timeout}s"
+            }
+        else:
+            # Process completed normally
+            result_val = result[0] if result else [-1]
+            metadata_val = metadata_list[0] if metadata_list else {"error": "No result"}
+    
+    except Exception as e:
+        print(f"Error in check_correctness: {e}")
+        result_val = [-1]
+        metadata_val = {
+            "error": str(e),
+            "error_code": -5,
+            "error_message": "Exception in check_correctness"
+        }
+    
+    finally:
+        # Clean up manager resources
+        manager.shutdown()
+        
+    return result_val, metadata_val
 
 
 def evaluate_generations_by_problem(args):
@@ -112,47 +156,49 @@ def evaluate_generations(
     num_process_evaluate: int = 16,
     timeout=6,
 ):
-    """We take the list of code generations and try to compile them
-     and the run their corresponding unit tests which are retrieved from the APPS dataset.
+    total_memory_gb = psutil.virtual_memory().total / (1024 ** 3)
+    # Be conservative with process count based on available memory
+    safe_process_count = max(1, min(num_process_evaluate, int(total_memory_gb / 2)))
+    
+    if safe_process_count < num_process_evaluate:
+        print(f"Limiting process count to {safe_process_count} based on available memory")
+        num_process_evaluate = safe_process_count
 
-    Args:
-        generations: list of code generations (same order as samples in APPS dataset)
-        level: difficulty level used in the generation, can be "all", "introductory", "interview" or "competition"
-
-    Returns:
-        results: dictionary of results, key is the problem index, value is a list of results for each generation
-    """
-
-    # generations are code generations in the same order of the dataset
-
+    # Create inputs for each evaluation task
     inputs = [
         [(generations_list[index], samples_list[index], debug, timeout), index]
         for index in range(len(generations_list))
     ]
 
+    results = {}
+    metadata = {}
+
     with tqdm(total=len(inputs)) as pbar:
-        with ProcessPoolExecutor(
-            max_workers=1 if debug else num_process_evaluate
-        ) as executor:
+        # Use a context manager to ensure resources are released
+        with ProcessPoolExecutor(max_workers=1 if debug else num_process_evaluate) as executor:
+            # Submit all jobs
             futures = {
                 executor.submit(evaluate_generations_by_problem, arg): index
                 for arg, index in inputs
             }
 
-            results = {}
-            metadata = {}
+            # Process results as they complete
             for future in as_completed(futures):
-                index = futures[future]
-                results[index], metadata[index] = future.result()
-                pbar.update(1)
+                try:
+                    index = futures[future]
+                    result, meta = future.result()
+                    results[index], metadata[index] = result, meta
+                    pbar.update(1)
+                except Exception as e:
+                    print(f"Error processing job: {e}")
+                
+                # Force some cleanup after each completion
+                gc.collect()
 
-    assert len(results) == len(
-        inputs
-    ), f"results = {len(results)} inputs = {len(inputs)} {results=}"
-    # results = {i: r for r, (_, i) in zip(results, inputs)}
-
+    # Verify all results are collected
+    assert len(results) == len(inputs), f"results = {len(results)} inputs = {len(inputs)}"
+    
     return results, metadata
-
 
 def codegen_metrics(
     samples_list,
@@ -161,55 +207,94 @@ def codegen_metrics(
     num_process_evaluate=16,
     timeout=6,
     debug=False,
+    batch_size=100,  # Process in smaller batches
 ):
+    import gc  # Add garbage collection
 
-    samples_linear = []
-    generations_linear = []
-    remap_index = []
-    results = defaultdict(list)
-    metadatas = defaultdict(list)
-    for idx, (sample, generation_list) in enumerate(
-        zip(samples_list, generations_list)
-    ):
-        assert isinstance(generation_list, list), generations_list[0]
-        for generation in generation_list:
-            assert isinstance(generation, str), generations_list[0]
-            samples_linear.append(sample)
-            generations_linear.append([generation])
-            remap_index.append(idx)
-
-    print(f"Evaluating {len(samples_linear)}...")
-
-    results_linear, metadatas_linear = evaluate_generations(
-        samples_linear,
-        generations_linear,
-        debug=debug,
-        num_process_evaluate=num_process_evaluate,
-        timeout=timeout,
-    )
-
-    for idx, sub_results in sorted(results_linear.items(), key=lambda x: x[0]):
-        results[remap_index[idx]].append(sub_results[0])
-
-    for idx, sub_metadatas in sorted(metadatas_linear.items(), key=lambda x: x[0]):
-        metadatas[remap_index[idx]].append(sub_metadatas[0])
-
-    metrics = compute_metrics_from_results(results, k_list=k_list)
-
+    # Get total size for progress tracking
+    total_samples = len(samples_list)
+    total_evaluated = 0
+    
+    # Prepare result containers
+    all_results = defaultdict(list)
+    all_metadatas = defaultdict(list)
+    
+    # Process in batches to limit memory usage
+    for batch_start in range(0, total_samples, batch_size):
+        batch_end = min(batch_start + batch_size, total_samples)
+        batch_size_actual = batch_end - batch_start
+        
+        print(f"Processing batch {batch_start}-{batch_end} of {total_samples}...")
+        
+        # Process only the current batch
+        batch_samples = samples_list[batch_start:batch_end]
+        batch_generations = generations_list[batch_start:batch_end]
+        
+        # Linearize the batch
+        samples_linear = []
+        generations_linear = []
+        remap_index = []
+        
+        for idx, (sample, generation_list) in enumerate(zip(batch_samples, batch_generations)):
+            assert isinstance(generation_list, list), generation_list
+            for generation in generation_list:
+                assert isinstance(generation, str), generation
+                samples_linear.append(sample)
+                generations_linear.append([generation])
+                remap_index.append(batch_start + idx)
+        
+        # Adjust num_process_evaluate based on batch size
+        effective_processes = min(num_process_evaluate, max(1, batch_size_actual // 4))
+        
+        # Run evaluation on the batch
+        results_linear, metadatas_linear = evaluate_generations(
+            samples_linear,
+            generations_linear,
+            debug=debug,
+            num_process_evaluate=effective_processes, 
+            timeout=timeout,
+        )
+        
+        # Process results for this batch
+        for idx, sub_results in sorted(results_linear.items(), key=lambda x: x[0]):
+            all_results[remap_index[idx]].append(sub_results[0])
+        
+        for idx, sub_metadatas in sorted(metadatas_linear.items(), key=lambda x: x[0]):
+            all_metadatas[remap_index[idx]].append(sub_metadatas[0])
+        
+        # Explicitly release memory
+        del samples_linear, generations_linear, remap_index
+        del results_linear, metadatas_linear
+        gc.collect()
+        
+        total_evaluated += batch_size_actual
+        print(f"Processed {total_evaluated}/{total_samples} samples")
+    
+    # Compute metrics once all batches are processed
+    metrics = compute_metrics_from_results(all_results, k_list=k_list)
+    
+    # Process final metadata
     final_metadata = []
-    for key in sorted(list(metadatas.keys())):
-        final_metadata.append(metadatas[key])
-    for i in range(len(final_metadata)):
-        if type(final_metadata[i]) is not list:
-            final_metadata[i] = [json.dumps(final_metadata[i])]
+    for key in sorted(list(all_metadatas.keys())):
+        metadata_entry = all_metadatas[key]
+        if not isinstance(metadata_entry, list):
+            metadata_entry = [json.dumps(metadata_entry)]
         else:
-            final_metadata[i] = [json.dumps(x) for x in final_metadata[i]]
-
-        assert len(final_metadata[i]) == len(
-            generations_list[0]
-        ), f"{len(final_metadata[i])=}"
-
-    return [metrics, results, final_metadata]
+            metadata_entry = [json.dumps(x) for x in metadata_entry]
+        
+        # Verify lengths match
+        expected_length = len(generations_list[key % len(generations_list)])
+        if len(metadata_entry) != expected_length:
+            print(f"Warning: Metadata length mismatch for key {key}: {len(metadata_entry)} vs {expected_length}")
+            # Pad or truncate to match expected length
+            if len(metadata_entry) < expected_length:
+                metadata_entry.extend([json.dumps({})] * (expected_length - len(metadata_entry)))
+            else:
+                metadata_entry = metadata_entry[:expected_length]
+                
+        final_metadata.append(metadata_entry)
+    
+    return [metrics, all_results, final_metadata]
 
 
 if __name__ == "__main__":

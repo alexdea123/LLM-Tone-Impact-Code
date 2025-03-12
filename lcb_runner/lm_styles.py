@@ -358,9 +358,16 @@ LanguageModelList: list[LanguageModel] = [
         datetime(2023, 1, 1),
         link="https://console.groq.com/docs/models",
     ),
-        LanguageModel(
+    LanguageModel(
         "llama3-70b-8192",
         "LLama3-70b-8192-Groq",
+        LMStyle.GroqLLM,
+        datetime(2023, 1, 1),
+        link="https://console.groq.com/docs/models",
+    ),
+    LanguageModel(
+        "llama-3.3-70b-versatile",
+        "LLama-3.3-70b-versatile-Groq",
         LMStyle.GroqLLM,
         datetime(2023, 1, 1),
         link="https://console.groq.com/docs/models",
