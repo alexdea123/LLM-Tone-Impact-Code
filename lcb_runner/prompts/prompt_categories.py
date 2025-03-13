@@ -56,7 +56,7 @@ INFLUENCE_PREFIXES = {
     ],
     
     InfluenceCategory.PRESSURE: [
-        "You must solve this correctly — mistakes are unacceptable. Failure here would cause serious problems - there is much at stake. Proceed carefully. ",
+        "You must solve this correctly - mistakes are unacceptable. Failure here would cause serious problems - there is much at stake. Proceed carefully. ",
     ],
     
     InfluenceCategory.INSPIRATIONAL: [
