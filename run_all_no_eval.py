@@ -8,7 +8,7 @@ from enum import Enum
 
 class InfluenceCategory(Enum):
     # NEUTRAL = "neutral"
-    POLITE = "polite"
+    # POLITE = "polite"
     INGRATIATING = "ingratiating"
     PRESSURE = "pressure"
     INSPIRATIONAL = "inspirational"

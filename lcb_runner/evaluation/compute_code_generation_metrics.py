@@ -339,7 +339,7 @@
 import os
 import sys
 import gc
-import psutil
+# import psutil
 
 sys.set_int_max_str_digits(50000)
 
@@ -435,7 +435,8 @@ def evaluate_generations(
     timeout=6,
 ):
     # Limit process count based on available memory.
-    total_memory_gb = psutil.virtual_memory().total / (1024 ** 3)
+    # total_memory_gb = psutil.virtual_memory().total / (1024 ** 3)
+    total_memory_gb = 1
     safe_process_count = max(1, min(num_process_evaluate, int(total_memory_gb / 2)))
     if safe_process_count < num_process_evaluate:
         print(f"Limiting process count to {safe_process_count} based on available memory")
