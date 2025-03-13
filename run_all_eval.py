@@ -6,13 +6,13 @@ from enum import Enum
 
 
 class InfluenceCategory(Enum):
-    # NEUTRAL = "neutral"
+    NEUTRAL = "neutral"
     POLITE = "polite"
-    INGRATIATING = "ingratiating"
     PRESSURE = "pressure"
     INSPIRATIONAL = "inspirational"
     RECIPROCITY = "reciprocity"
     INSULTS = "insults"
+    INGRATIATING = "ingratiating"
 
 
 def setup_groq_key():
@@ -41,9 +41,8 @@ def main():
         "--continue_existing_with_eval",
         "--continue_existing",
         "--n", "10",
-        "--num_process_evaluate", "3",
+        "--num_process_evaluate", "4",
         "--start_date", "2024-01-01",
-        # "--end_date", "2024-01-31",
         "--end_date", "2024-12-31"
     ]
         
