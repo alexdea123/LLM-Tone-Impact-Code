@@ -3,6 +3,8 @@ import json
 import sys
 import faulthandler
 import platform
+import threading
+import os
 
 # used for debugging to time steps
 from datetime import datetime
@@ -47,6 +49,61 @@ class CODE_TYPE(Enum):
 class TimeoutException(Exception):
     pass
 
+
+# Cross-platform timeout management
+class TimeoutManager:
+    def __init__(self):
+        self.is_windows = platform.system() == 'Windows'
+        self.timer = None
+        
+    def set_timeout(self, seconds):
+        if seconds <= 0:
+            return
+            
+        if self.is_windows:
+            # Cancel any existing timer
+            self.cancel_timeout()
+            self.timer = threading.Timer(seconds, self._windows_timeout_handler)
+            self.timer.daemon = True
+            self.timer.start()
+        else:
+            # On Unix, use the traditional signal.alarm
+            signal.alarm(seconds)
+            
+    def cancel_timeout(self):
+        if self.is_windows:
+            if self.timer is not None:
+                self.timer.cancel()
+                self.timer = None
+        else:
+            signal.alarm(0)
+            
+    def _windows_timeout_handler(self):
+        print("timeout occured: timer went off")
+        # Raise exception in the main thread
+        thread_id = threading.main_thread().ident
+        if thread_id:
+            # Raise exception in the main thread
+            res = ctypes_raise_exception(TimeoutException, thread_id)
+            if not res:  # If we couldn't raise the exception
+                os._exit(1)
+
+# Global timeout manager
+timeout_manager = TimeoutManager()
+
+# For Windows, we need to use ctypes to inject an exception into the main thread
+def ctypes_raise_exception(exception_type, thread_id):
+    import ctypes
+    try:
+        # Ensure the exception will be caught by Python
+        exception_object = exception_type()
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_long(thread_id), 
+            ctypes.py_object(exception_object)
+        )
+        return True
+    except:
+        return False
 
 def timeout_handler(signum, frame):
     print("timeout occured: alarm went off")
@@ -154,7 +211,7 @@ def get_function(compiled_sol, fn_name: str):  # type: ignore
 
 
 def compile_code(code: str, timeout: int):
-    signal.alarm(timeout)
+    timeout_manager.set_timeout(timeout)
     try:
         tmp_sol = ModuleType("tmp_sol", "")
         exec(code, tmp_sol.__dict__)
@@ -170,7 +227,7 @@ def compile_code(code: str, timeout: int):
 
         assert compiled_sol is not None
     finally:
-        signal.alarm(0)
+        timeout_manager.cancel_timeout()
 
     return compiled_sol
 
@@ -215,14 +272,14 @@ def grade_call_based(
     total_execution = 0
     all_results = []
     for idx, (gt_inp, gt_out) in enumerate(zip(all_inputs, all_outputs)):
-        signal.alarm(timeout)
+        timeout_manager.set_timeout(timeout)
         faulthandler.enable()
         try:
             # can lock here so time is useful
             start = time.time()
             prediction = method(*gt_inp)
             total_execution += time.time() - start
-            signal.alarm(0)
+            timeout_manager.cancel_timeout()
 
             # don't penalize model if it produces tuples instead of lists
             # ground truth sequences are not tuples
@@ -244,8 +301,8 @@ def grade_call_based(
                     "error_message": "Wrong Answer",
                 }
         except Exception as e:
-            signal.alarm(0)
-            if "timeoutexception" in repr(e).lower():
+            timeout_manager.cancel_timeout()
+            if isinstance(e, TimeoutException) or "timeoutexception" in repr(e).lower():
                 all_results.append(-3)
                 return all_results, {
                     "error": repr(e),
@@ -265,7 +322,7 @@ def grade_call_based(
                 }
 
         finally:
-            signal.alarm(0)
+            timeout_manager.cancel_timeout()
             faulthandler.disable()
 
     return all_results, {"execution time": total_execution}
@@ -295,20 +352,20 @@ def grade_stdio(
     all_results = []
     total_execution_time = 0
     for idx, (gt_inp, gt_out) in enumerate(zip(all_inputs, all_outputs)):
-        signal.alarm(timeout)
+        timeout_manager.set_timeout(timeout)
         faulthandler.enable()
 
-        signal.alarm(timeout)
+        timeout_manager.set_timeout(timeout)
         with Capturing() as captured_output:
             try:
                 start = time.time()
                 call_method(method, gt_inp)
                 total_execution_time += time.time() - start
                 # reset the alarm
-                signal.alarm(0)
+                timeout_manager.cancel_timeout()
             except Exception as e:
-                signal.alarm(0)
-                if "timeoutexception" in repr(e).lower():
+                timeout_manager.cancel_timeout()
+                if isinstance(e, TimeoutException) or "timeoutexception" in repr(e).lower():
                     all_results.append(-3)
                     return all_results, {
                         "error": repr(e),
@@ -328,7 +385,7 @@ def grade_stdio(
                     }
 
             finally:
-                signal.alarm(0)
+                timeout_manager.cancel_timeout()
                 faulthandler.disable()
 
         prediction = captured_output[0]
@@ -394,7 +451,13 @@ def run_test(sample, test=None, debug=False, timeout=6):
     if test(generated_code) is not None it'll try to run the code.
     otherwise it'll just return an input and output pair.
     """
-    signal.signal(signal.SIGALRM, timeout_handler)
+    # Setup timeout handling based on platform
+    if platform.system() != 'Windows':
+        signal.signal(signal.SIGALRM, timeout_handler)
+    
+    # Import ctypes only on Windows
+    if platform.system() == 'Windows':
+        import ctypes
 
     # Disable functionalities that can make destructive changes to the test.
     # max memory is set to 4GB
@@ -431,7 +494,7 @@ def run_test(sample, test=None, debug=False, timeout=6):
             print(f"loading test code = {datetime.now().time()}")
 
         if which_type == CODE_TYPE.call_based:
-            signal.alarm(timeout)
+            timeout_manager.set_timeout(timeout)
             try:
                 results, metadata = grade_call_based(
                     code=test,
@@ -447,12 +510,12 @@ def run_test(sample, test=None, debug=False, timeout=6):
                     "error_message": f"Error during testing: {e}",
                 }
             finally:
-                signal.alarm(0)
+                timeout_manager.cancel_timeout()
         elif which_type == CODE_TYPE.standard_input:
             # sol
             # if code has if __name__ == "__main__": then remove it
 
-            signal.alarm(timeout)
+            timeout_manager.set_timeout(timeout)
             try:
                 results, metadata = grade_stdio(
                     code=test,
@@ -467,7 +530,7 @@ def run_test(sample, test=None, debug=False, timeout=6):
                     "error_message": f"Error during testing: {e}",
                 }
             finally:
-                signal.alarm(0)
+                timeout_manager.cancel_timeout()
 
 
 def reliability_guard(maximum_memory_bytes=None):

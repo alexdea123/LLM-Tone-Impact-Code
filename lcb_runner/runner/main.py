@@ -108,6 +108,7 @@ def main():
     #                 print(combined_results[i][1][j])
 
     if args.evaluate:
+        print("Inside if args.evaluate")
         if args.continue_existing_with_eval and os.path.exists(eval_all_file):
             with open(eval_all_file) as fp:
                 old_eval_all_results = json.load(fp)
@@ -117,6 +118,12 @@ def main():
                     old_eval_results = json.load(fp)
             else:
                 old_eval_results = None
+
+            print(f"Loaded {len(old_eval_all_results)} previous evaluation results")
+            if old_eval_all_results:
+                print(f"First question ID: {old_eval_all_results[0].get('question_id', 'missing')}")
+                # Check if structure matches what's expected
+                print(f"Keys in first result: {list(old_eval_all_results[0].keys())}")
 
             old_eval_results_question_ids = [
                 instance["question_id"] for instance in old_eval_all_results

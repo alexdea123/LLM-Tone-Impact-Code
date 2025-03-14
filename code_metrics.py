@@ -178,9 +178,13 @@ def get_pylint_metrics(code: str) -> Dict[str, Any]:
 
 def process_eval_all_json(file_path: str) -> Dict[str, Any]:
     """Process eval_all.json file and calculate metrics for code submissions."""
+    # Normalize path to use forward slashes for consistent regex matching
+    normalized_path = file_path.replace('\\', '/')
+
     # Extract tone category and model from path
-    tone_match = re.search(r'/([^/]+)/Scenario\.codegeneration', file_path)
-    model_match = re.search(r'/([^/]+)/[^/]+/Scenario\.codegeneration', file_path)
+    tone_match = re.search(r'/([^/]+)/Scenario\.codegeneration', normalized_path)
+    print('tone_match:', tone_match)
+    model_match = re.search(r'/([^/]+)/[^/]+/Scenario\.codegeneration', normalized_path)
     
     tone_category = tone_match.group(1) if tone_match else "unknown"
     model_name = model_match.group(1) if model_match else "unknown"

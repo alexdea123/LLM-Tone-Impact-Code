@@ -2,7 +2,18 @@ import subprocess
 import os
 import time
 from datetime import datetime
-from lcb_runner.prompts.prompt_categories import InfluenceCategory
+from enum import Enum
+# from lcb_runner.prompts.prompt_categories import InfluenceCategory
+
+
+class InfluenceCategory(Enum):
+    # NEUTRAL = "neutral"
+    POLITE = "polite"
+    INGRATIATING = "ingratiating"
+    PRESSURE = "pressure"
+    INSPIRATIONAL = "inspirational"
+    RECIPROCITY = "reciprocity"
+    INSULTS = "insults"
 
 
 def setup_groq_key():
@@ -23,14 +34,17 @@ def main():
     # Base command without the category
     base_cmd = [
         "python", "-m", "lcb_runner.runner.main",
-        "--model", "llama3-70b-8192",
+        "--model", "llama-3.3-70b-versatile",
         "--scenario", "codegeneration",
         "--evaluate",
         "--release_version", "release_v4",
         "--use_cache",
+        "--continue_existing_with_eval",
+        "--continue_existing",
         "--n", "10",
+        "--num_process_evaluate", "4",
         "--start_date", "2024-01-01",
-        "--end_date", "2024-12-31"
+        "--end_date", "2024-01-31",
         # "--end_date", "2024-12-31"
     ]
         

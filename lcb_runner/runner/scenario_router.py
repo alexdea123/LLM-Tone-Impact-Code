@@ -86,6 +86,7 @@ def combine_results(
     model: LanguageModel,
     cot_code_execution: bool = False,
 ):
+    print("Inside combine_results")
     if scenario == Scenario.codegeneration:
         combined_results = [
             (
