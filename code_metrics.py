@@ -7,7 +7,7 @@ import tempfile
 import json
 import statistics
 from collections import defaultdict, Counter
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 import pandas as pd
 import numpy as np
 import lizard
@@ -35,6 +35,119 @@ def convert_to_python_types(obj):
         return obj
 
 
+def get_identifier_metrics(code: str) -> Dict[str, Any]:
+    """Extract metrics related to identifiers (variable/function names)."""
+    try:
+        tree = ast.parse(code)
+        
+        # Extract all names from the AST
+        variable_names = []
+        function_names = []
+        
+        # Find all variable assignments and function definitions
+        for node in ast.walk(tree):
+            # Variables (Name nodes that are targets of assignments)
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        variable_names.append(target.id)
+            # Function definitions
+            elif isinstance(node, ast.FunctionDef):
+                function_names.append(node.name)
+        
+        # Calculate metrics
+        all_identifiers = variable_names + function_names
+        
+        if all_identifiers:
+            avg_identifier_length = sum(len(name) for name in all_identifiers) / len(all_identifiers)
+            max_identifier_length = max(len(name) for name in all_identifiers) if all_identifiers else 0
+            min_identifier_length = min(len(name) for name in all_identifiers) if all_identifiers else 0
+        else:
+            avg_identifier_length = 0
+            max_identifier_length = 0
+            min_identifier_length = 0
+            
+        return {
+            'avg_identifier_length': avg_identifier_length,
+            'max_identifier_length': max_identifier_length,
+            'min_identifier_length': min_identifier_length,
+            'variable_count': len(variable_names),
+            'function_name_count': len(function_names),
+            'total_identifiers': len(all_identifiers)
+        }
+    except Exception as e:
+        return {
+            'avg_identifier_length': 0,
+            'max_identifier_length': 0,
+            'min_identifier_length': 0,
+            'variable_count': 0,
+            'function_name_count': 0,
+            'total_identifiers': 0,
+            'identifier_error': str(e)
+        }
+
+
+def get_comment_metrics(code: str) -> Dict[str, Any]:
+    """Extract detailed metrics about comments and docstrings."""
+    lines = code.splitlines()
+    
+    # Count inline and block comments
+    comment_lines = [line.strip() for line in lines if line.strip().startswith('#')]
+    comment_chars = sum(len(line) for line in comment_lines)
+    
+    # Extract docstrings using AST
+    try:
+        tree = ast.parse(code)
+        docstrings = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Module)):
+                docstring = ast.get_docstring(node)
+                if docstring:
+                    docstrings.append(docstring)
+        
+        docstring_chars = sum(len(ds) for ds in docstrings)
+        
+        # Calculate total characters in code (excluding comments and docstrings)
+        # First, remove all comment lines
+        code_without_comments = '\n'.join(line for line in lines if not line.strip().startswith('#'))
+        
+        # Then, try to replace docstrings with empty strings (approximation)
+        # This is imperfect but gives a reasonable estimate
+        for ds in docstrings:
+            # Escape special regex characters in docstring
+            escaped_ds = re.escape(ds)
+            # Replace docstring with empty string (accounting for quotes)
+            code_without_comments = re.sub(f'[\'"]{{3}}{escaped_ds}[\'"]{{3}}', '', code_without_comments)
+        
+        # Total characters in actual code (approximation)
+        code_chars = len(code_without_comments)
+        
+        # Total characters in all comments (including docstrings)
+        total_comment_chars = comment_chars + docstring_chars
+        
+        return {
+            'comment_line_count': len(comment_lines),
+            'docstring_count': len(docstrings),
+            'comment_char_count': comment_chars,
+            'docstring_char_count': docstring_chars,
+            'total_comment_char_count': total_comment_chars,
+            'code_char_count': code_chars,
+            'comment_to_code_char_ratio': total_comment_chars / code_chars if code_chars > 0 else 0
+        }
+    except Exception as e:
+        return {
+            'comment_line_count': len(comment_lines),
+            'comment_char_count': comment_chars,
+            'docstring_count': 0,
+            'docstring_char_count': 0,
+            'total_comment_char_count': comment_chars,
+            'code_char_count': 0,
+            'comment_to_code_char_ratio': 0,
+            'comment_error': str(e)
+        }
+
+
 def calculate_metrics(code: str) -> Dict[str, Any]:
     """
     Calculate code quality metrics for a given Python code using existing packages.
@@ -43,79 +156,77 @@ def calculate_metrics(code: str) -> Dict[str, Any]:
         code: String containing Python code
         
     Returns:
-        Dictionary containing various code quality metrics
+        Dictionary containing various code quality metrics grouped by research question
     """
     metrics = {
-        'lines_of_code': len(code.splitlines()),
-        'char_count': len(code)
+        'basic': {
+            'lines_of_code': len(code.splitlines()),
+            'char_count': len(code)
+        },
+        'RQ1': {},  # Correctness metrics
+        'RQ2': {},  # Stylistic attributes
+        'RQ3': {}   # Code quality metrics
     }
     
     try:
-        # Use lizard for most code metrics (cyclomatic complexity, etc.)
+        # Get identifier metrics (for RQ2)
+        identifier_metrics = get_identifier_metrics(code)
+        metrics['RQ2'].update(identifier_metrics)
+        
+        # Get comment metrics (for RQ2)
+        comment_metrics = get_comment_metrics(code)
+        metrics['RQ2'].update(comment_metrics)
+        
+        # Use lizard for complexity metrics (for RQ3)
         analysis = lizard.analyze_file.analyze_source_code("temp.py", code)
         
         # Extract function-level metrics
         if analysis.function_list:
-            metrics['function_count'] = len(analysis.function_list)
-            metrics['avg_cyclomatic_complexity'] = np.mean([f.cyclomatic_complexity for f in analysis.function_list])
-            metrics['max_cyclomatic_complexity'] = max([f.cyclomatic_complexity for f in analysis.function_list])
-            metrics['avg_method_length'] = np.mean([f.nloc for f in analysis.function_list])
-            metrics['max_method_length'] = max([f.nloc for f in analysis.function_list]) if analysis.function_list else 0
-            metrics['min_method_length'] = min([f.nloc for f in analysis.function_list]) if analysis.function_list else 0
+            metrics['RQ3']['function_count'] = len(analysis.function_list)
+            metrics['RQ3']['avg_cyclomatic_complexity'] = np.mean([f.cyclomatic_complexity for f in analysis.function_list])
+            metrics['RQ3']['max_cyclomatic_complexity'] = max([f.cyclomatic_complexity for f in analysis.function_list])
+            metrics['RQ3']['total_cyclomatic_complexity'] = sum([f.cyclomatic_complexity for f in analysis.function_list])
         else:
-            metrics['function_count'] = 0
-            metrics['avg_cyclomatic_complexity'] = 0
-            metrics['max_cyclomatic_complexity'] = 0
-            metrics['avg_method_length'] = 0
-            metrics['max_method_length'] = 0
-            metrics['min_method_length'] = 0
+            metrics['RQ3']['function_count'] = 0
+            metrics['RQ3']['avg_cyclomatic_complexity'] = 0
+            metrics['RQ3']['max_cyclomatic_complexity'] = 0
+            metrics['RQ3']['total_cyclomatic_complexity'] = 0
         
         # Parse AST for other metrics
         tree = ast.parse(code)
         class_count = sum(1 for node in ast.walk(tree) if isinstance(node, ast.ClassDef))
-        import_count = sum(1 for node in ast.walk(tree) 
-                           if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom))
-        docstring_count = sum(1 for node in ast.walk(tree) 
-                             if (isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Module)) 
-                                and ast.get_docstring(node)))
+        metrics['RQ3']['class_count'] = class_count
         
-        metrics['class_count'] = class_count
-        metrics['import_count'] = import_count
-        metrics['docstring_count'] = docstring_count
-        
-        # Radon - Raw metrics for code size statistics
+        # Radon - Raw metrics for code size statistics (for RQ3)
         try:
             raw_metrics = radon_raw.analyze(code)
-            metrics['raw_lloc'] = raw_metrics.lloc
-            metrics['raw_sloc'] = raw_metrics.sloc
-            metrics['raw_comments'] = raw_metrics.comments
-            metrics['raw_multi'] = raw_metrics.multi
-            metrics['raw_blank'] = raw_metrics.blank
+            metrics['RQ3']['logical_loc'] = raw_metrics.lloc
+            metrics['RQ3']['source_loc'] = raw_metrics.sloc
         except Exception:
-            pass
+            metrics['RQ3']['logical_loc'] = 0
+            metrics['RQ3']['source_loc'] = 0
         
-        # Run pylint for code quality score
-        metrics.update(get_pylint_metrics(code))
+        # Run pylint for code quality score (for RQ3)
+        pylint_metrics = get_pylint_metrics(code)
+        metrics['RQ3'].update(pylint_metrics)
         
-        # Add line length metrics
-        lines = [line for line in code.splitlines() if line.strip()]
-        if lines:
-            line_lengths = [len(line) for line in lines]
-            metrics['max_line_length'] = max(line_lengths) if line_lengths else 0
-            metrics['avg_line_length'] = np.mean(line_lengths) if line_lengths else 0
-        
-        # Count comments
-        comment_lines = sum(1 for line in code.splitlines() if line.strip().startswith('#'))
-        metrics['comment_count'] = comment_lines
-        metrics['comment_ratio'] = comment_lines / len(lines) if lines else 0
+        # Add raw LOC for RQ3
+        metrics['RQ3']['raw_loc'] = metrics['basic']['lines_of_code']
         
     except SyntaxError as e:
-        metrics['syntax_error'] = True
-        metrics['error_message'] = str(e)
+        metrics['error'] = {'syntax_error': True, 'error_message': str(e)}
     except Exception as e:
-        metrics['error'] = str(e)
-        
-    return metrics
+        metrics['error'] = {'error': str(e)}
+    
+    # Flatten the metrics dictionary for backward compatibility
+    flat_metrics = {}
+    flat_metrics.update(metrics['basic'])
+    for category, category_metrics in metrics.items():
+        if isinstance(category_metrics, dict):
+            flat_metrics.update(category_metrics)
+    
+    return flat_metrics
+
 
 def get_pylint_metrics(code: str) -> Dict[str, Any]:
     """Run pylint on code and extract metrics."""
@@ -197,6 +308,8 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
     
     results = {}
     pass_at_1_count = 0
+    pass_at_5_count = 0    # new counter for pass@5
+    pass_at_10_count = 0   # new counter for pass@10
     total_problems = 0
     
     for problem_idx, problem in enumerate(data):
@@ -209,6 +322,14 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
             pass_at_1_count += pass_at_1
             total_problems += 1
         
+        # Track pass@5 and pass@10, similar to pass@1
+        pass_at_5 = problem.get('pass@5', None)
+        if pass_at_5 is not None:
+            pass_at_5_count += pass_at_5
+        pass_at_10 = problem.get('pass@10', None)
+        if pass_at_10 is not None:
+            pass_at_10_count += pass_at_10
+
         # Process each solution
         for solution_idx, code_solution in enumerate(problem.get('code_list', [])):
             if not code_solution.strip():
@@ -217,7 +338,7 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
             # Calculate metrics
             metrics = calculate_metrics(code_solution)
             
-            # Add metadata
+            # Add metadata including pass@ values from the problem
             metadata = {
                 'problem_id': problem.get('question_id', f"problem_{problem_idx}"),
                 'problem_title': problem.get('question_title', f"problem_{problem_idx}"),
@@ -228,7 +349,10 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
                 'graded': problem.get('graded_list', [])[solution_idx] 
                          if solution_idx < len(problem.get('graded_list', [])) else None,
                 'tone_category': tone_category,
-                'model_name': model_name
+                'model_name': model_name,
+                'pass@1': problem.get('pass@1', None),  # added pass@1 to metadata
+                'pass@5': problem.get('pass@5', None),  # added pass@5 to metadata
+                'pass@10': problem.get('pass@10', None)  # added pass@10 to metadata
             }
             
             # Merge metric data with metadata
@@ -258,12 +382,400 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
         "model_name": model_name,
         "results": results,
         "pass_at_1_count": pass_at_1_count,
+        "pass_at_5_count": pass_at_5_count,    # returning pass@5 count
+        "pass_at_10_count": pass_at_10_count,   # returning pass@10 count
         "total_problems": total_problems
     }
 
 
+def aggregate_metrics_by_rq(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """Aggregate metrics grouped by research question."""
+    rq_metrics = {
+        "RQ1": {  # Correctness metrics
+            "metrics": ["pass@1", "pass@5", "pass@10"],
+            "data": {}
+        },
+        "RQ2": {  # Stylistic attributes
+            "metrics": [
+                "comment_line_count", "docstring_count", "comment_char_count", 
+                "docstring_char_count", "total_comment_char_count", "comment_to_code_char_ratio",
+                "avg_identifier_length", "pylint_conventions", "char_count"
+            ],
+            "data": {}
+        },
+        "RQ3": {  # Code quality
+            "metrics": [
+                "avg_cyclomatic_complexity", "max_cyclomatic_complexity", "total_cyclomatic_complexity",
+                "logical_loc", "source_loc", "raw_loc", "pylint_score", 
+                "pylint_errors", "pylint_warnings", "pylint_issue_count"
+            ],
+            "data": {}
+        }
+    }
+    
+    # Get a count of all problems by tone
+    problem_counts = df.groupby('tone_category')['problem_id'].nunique()
+    
+    # Calculate pass rates with improved handling of missing solutions
+    pass_rates = df.groupby(['tone_category', 'problem_id']).apply(
+        lambda x: pd.Series({
+            'first_solution_passed': x.iloc[0]['graded'] if len(x) > 0 else False,
+            'pass_at_5': any(x.iloc[:5]['graded']) if len(x) >= 5 else any(x['graded']) if len(x) > 0 else False,
+            'pass_at_10': any(x.iloc[:10]['graded']) if len(x) >= 10 else any(x['graded']) if len(x) > 0 else False,
+            'solution_count': len(x),
+            'overall_pass_rate': x['graded'].mean() if len(x) > 0 else 0
+        })
+    ).reset_index()
+    
+    # Aggregate metrics by tone for each research question
+    for rq, rq_info in rq_metrics.items():
+        metrics_list = rq_info["metrics"]
+        rq_data = {}
+        
+        # For RQ1, use the pass rates we calculated
+        if rq == "RQ1":
+            tone_performance = pass_rates.groupby('tone_category').agg(
+                pass_at_1_rate=('first_solution_passed', 'mean'),
+                pass_at_5_rate=('pass_at_5', 'mean'),
+                pass_at_10_rate=('pass_at_10', 'mean'),
+                overall_pass_rate=('overall_pass_rate', 'mean'),
+                avg_solution_count=('solution_count', 'mean'),
+                total_solution_count=('solution_count', 'sum')
+            ).reset_index()
+            
+            for _, row in tone_performance.iterrows():
+                tone = row['tone_category']
+                total_problems = problem_counts.get(tone, 0)
+                
+                rq_data[tone] = {
+                    "pass@1": row['pass_at_1_rate'],
+                    "pass@5": row['pass_at_5_rate'],
+                    "pass@10": row['pass_at_10_rate'],
+                    "overall_pass_rate": row['overall_pass_rate'],
+                    "problem_count": total_problems,  # Use the full problem count
+                    "avg_solutions_per_problem": row['avg_solution_count'],
+                    "total_solutions": row['total_solution_count']
+                }
+        else:
+            # For RQ2 and RQ3, get mean/variance of each metric by tone
+            for tone, tone_df in df.groupby('tone_category'):
+                tone_metrics = {}
+                
+                for metric in metrics_list:
+                    if metric in tone_df.columns:
+                        tone_metrics[metric] = {
+                            "mean": tone_df[metric].mean() if not tone_df[metric].empty else 0,
+                            "median": tone_df[metric].median() if not tone_df[metric].empty else 0,
+                            "stddev": tone_df[metric].std() if not tone_df[metric].empty else 0,
+                            "count": len(tone_df[metric].dropna())  # Count all valid solutions
+                        }
+                
+                tone_metrics["solution_count"] = len(tone_df)
+                tone_metrics["problem_count"] = len(tone_df['problem_id'].unique())
+                
+                rq_data[tone] = tone_metrics
+        
+        rq_metrics[rq]["data"] = rq_data
+    
+    return rq_metrics
+
+
+def calculate_per_question_metrics(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """Calculate metrics for each question across tones."""
+    # Get list of all metrics to analyze
+    rq2_metrics = [
+        "comment_line_count", "docstring_count", "comment_char_count", 
+        "docstring_char_count", "total_comment_char_count", "comment_to_code_char_ratio",
+        "avg_identifier_length", "pylint_conventions", "char_count"
+    ]
+    
+    rq3_metrics = [
+        "avg_cyclomatic_complexity", "max_cyclomatic_complexity", "total_cyclomatic_complexity",
+        "logical_loc", "source_loc", "raw_loc", "pylint_score", 
+        "pylint_errors", "pylint_warnings", "pylint_issue_count"
+    ]
+    
+    all_metrics = rq2_metrics + rq3_metrics
+    
+    # Create dictionary to hold results
+    per_question_metrics = {}
+    
+    # Process each question
+    for problem_id, problem_df in df.groupby('problem_id'):
+        problem_results = {
+            "tones": {},
+            "variances": {}
+        }
+        
+        # Calculate metrics by tone for this question
+        for tone, tone_df in problem_df.groupby('tone_category'):
+            tone_metrics = {}
+            
+            # Use all solutions instead of just the first one
+            for metric in all_metrics:
+                if metric in tone_df.columns:
+                    values = tone_df[metric].dropna()
+                    if not values.empty:
+                        tone_metrics[metric] = {
+                            "mean": values.mean(),
+                            "count": len(values)  # Count represents total number of solutions
+                        }
+                    else:
+                        tone_metrics[metric] = {
+                            "mean": 0,
+                            "count": 0
+                        }
+            
+            # Add pass rate considering all solutions
+            if 'graded' in tone_df.columns:
+                # Sort by solution_idx to ensure we're evaluating solutions in order
+                sorted_df = tone_df.sort_values('solution_idx')
+                graded_values = sorted_df['graded'].values
+                
+                # Calculate pass@k rates
+                pass_at_1 = graded_values[0] if len(graded_values) > 0 else False
+                pass_at_5 = any(graded_values[:5]) if len(graded_values) >= 5 else any(graded_values) if len(graded_values) > 0 else False
+                pass_at_10 = any(graded_values[:10]) if len(graded_values) >= 10 else any(graded_values) if len(graded_values) > 0 else False
+                
+                # Overall pass rate
+                all_passes = sorted_df['graded'].sum() if not sorted_df.empty else 0
+                total_sols = len(sorted_df) if not sorted_df.empty else 0
+                
+                tone_metrics["pass@1"] = {
+                    "rate": 1.0 if pass_at_1 else 0.0,
+                    "count": 1  # Always 1 for pass@1
+                }
+                
+                tone_metrics["pass@5"] = {
+                    "rate": 1.0 if pass_at_5 else 0.0,
+                    "count": min(5, len(graded_values))  # Count up to 5
+                }
+                
+                tone_metrics["pass@10"] = {
+                    "rate": 1.0 if pass_at_10 else 0.0,
+                    "count": min(10, len(graded_values))  # Count up to 10
+                }
+                
+                tone_metrics["overall_pass"] = {
+                    "rate": all_passes / total_sols if total_sols > 0 else 0,
+                    "count": total_sols
+                }
+            
+            problem_results["tones"][tone] = tone_metrics
+        
+        # Calculate between-tone variance for each metric for this problem
+        for metric in all_metrics + ["pass@1", "pass@5", "pass@10", "overall_pass"]:
+            # Get means and counts by tone
+            if metric in ["pass@1", "pass@5", "pass@10", "overall_pass"]:
+                means = [t.get(metric, {}).get("rate", 0) for t in problem_results["tones"].values()]
+                counts = [t.get(metric, {}).get("count", 0) for t in problem_results["tones"].values()]
+            else:
+                if metric in tone_df.columns:
+                    means = [t.get(metric, {}).get("mean", 0) for t in problem_results["tones"].values()]
+                    counts = [t.get(metric, {}).get("count", 0) for t in problem_results["tones"].values()]
+            
+            # Calculate weighted variance if possible
+            if len(means) > 1 and sum(counts) > 0:
+                # Convert to numpy arrays for calculation
+                means_array = np.array(means)
+                counts_array = np.array(counts)
+                
+                # Filter out zeros
+                valid_indices = counts_array > 0
+                if np.sum(valid_indices) > 1:
+                    valid_means = means_array[valid_indices]
+                    valid_counts = counts_array[valid_indices]
+                    
+                    # Calculate weighted mean
+                    weighted_mean = np.average(valid_means, weights=valid_counts)
+                    
+                    # Calculate weighted variance
+                    variance = np.average((valid_means - weighted_mean) ** 2, weights=valid_counts)
+                    variance = variance * (np.sum(valid_counts) / (np.sum(valid_counts) - 1))
+                    
+                    problem_results["variances"][metric] = float(variance)
+                else:
+                    problem_results["variances"][metric] = 0.0
+            else:
+                problem_results["variances"][metric] = 0.0
+        
+        per_question_metrics[problem_id] = problem_results
+    
+    return per_question_metrics
+
+
+def calculate_variance_components(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
+    """Calculate variance components (between-question, between-tone, within) for key metrics."""
+    # Define metrics for each research question
+    rq_metrics = {
+        "RQ1": ["graded"],  # For pass@1 (first solution correctness)
+        "RQ2": [
+            "comment_line_count", "docstring_count", "comment_char_count", 
+            "docstring_char_count", "total_comment_char_count", "comment_to_code_char_ratio",
+            "avg_identifier_length", "pylint_conventions", "char_count"
+        ],
+        "RQ3": [
+            "avg_cyclomatic_complexity", "max_cyclomatic_complexity", "total_cyclomatic_complexity",
+            "logical_loc", "source_loc", "raw_loc", "pylint_score", 
+            "pylint_errors", "pylint_warnings", "pylint_issue_count"
+        ]
+    }
+    
+    # Keep track of first solutions for pass@1 analysis
+    first_solutions = df[df['solution_idx'] == 0]
+    
+    # Prepare result structure
+    variance_components = {}
+    
+    # Calculate variance components for each metric
+    for rq, metrics in rq_metrics.items():
+        variance_components[rq] = {}
+        
+        for metric in metrics:
+            # For graded (RQ1), we need to handle it specially
+            if metric == "graded":
+                # For pass@1, use only first solutions
+                pass_at_1_variance = calculate_metric_variance_components(first_solutions, metric)
+                
+                # For pass@5 and pass@10, we need to process by problem/tone groups
+                pass_at_5_data = process_pass_at_k(df, k=5)
+                pass_at_10_data = process_pass_at_k(df, k=10)
+                
+                # For all solutions pass rate, use all data
+                all_solutions_variance = calculate_metric_variance_components(df, metric)
+                
+                variance_components[rq]["pass@1"] = pass_at_1_variance
+                variance_components[rq]["pass@5"] = calculate_metric_variance_components(pass_at_5_data, 'pass_at_k')
+                variance_components[rq]["pass@10"] = calculate_metric_variance_components(pass_at_10_data, 'pass_at_k')
+                variance_components[rq]["overall_pass"] = all_solutions_variance
+            else:
+                # For all other metrics, use all solutions
+                if metric in df.columns:
+                    metric_variance = calculate_metric_variance_components(df, metric)
+                    variance_components[rq][metric] = metric_variance
+    
+    return variance_components
+
+
+def calculate_metric_variance_components(data: pd.DataFrame, metric: str) -> Dict[str, float]:
+    """Helper function to calculate variance components for a specific metric."""
+    if metric not in data.columns:
+        return {
+            "total_variance": 0.0,
+            "between_question_variance": 0.0,
+            "between_tone_variance": 0.0,
+            "residual_variance": 0.0,
+            "variance_explained_by_question": 0.0,
+            "variance_explained_by_tone": 0.0
+        }
+    
+    # Drop NaN values
+    valid_data = data[~data[metric].isna()]
+    if valid_data.empty:
+        return {
+            "total_variance": 0.0,
+            "between_question_variance": 0.0,
+            "between_tone_variance": 0.0,
+            "residual_variance": 0.0,
+            "variance_explained_by_question": 0.0,
+            "variance_explained_by_tone": 0.0
+        }
+    
+    # Calculate total variance
+    total_variance = valid_data[metric].var(ddof=1) if len(valid_data) > 1 else 0.0
+    
+    # Calculate grand mean
+    grand_mean = valid_data[metric].mean()
+    
+    # Calculate between-question variance
+    problem_stats = valid_data.groupby('problem_id').agg({
+        metric: ['mean', 'count']
+    })
+    problem_stats.columns = ['mean', 'count']
+    
+    if len(problem_stats) > 1:
+        # Calculate weighted between-question variance
+        weights = problem_stats['count']
+        means = problem_stats['mean']
+        
+        # Handle empty or single item case
+        if len(means) <= 1 or sum(weights) <= 1:
+            between_question_variance = 0.0
+        else:
+            weighted_mean_of_squares = np.average((means - grand_mean) ** 2, weights=weights)
+            between_question_variance = weighted_mean_of_squares * (sum(weights) / (sum(weights) - 1))
+            between_question_variance = min(between_question_variance, total_variance)
+    else:
+        between_question_variance = 0.0
+    
+    # Calculate between-tone variance (within questions)
+    tone_question_stats = valid_data.groupby(['tone_category', 'problem_id']).agg({
+        metric: ['mean', 'count']
+    })
+    tone_question_stats.columns = ['mean', 'count']
+    
+    # Reset index to get tone and problem_id as columns
+    tone_question_stats = tone_question_stats.reset_index()
+    
+    # Join with problem means to get problem-level deviations
+    problem_means = problem_stats.reset_index()[['problem_id', 'mean']].rename(columns={'mean': 'problem_mean'})
+    tone_question_stats = pd.merge(tone_question_stats, problem_means, on='problem_id')
+    
+    # Calculate deviations from problem means
+    tone_question_stats['deviation'] = tone_question_stats['mean'] - tone_question_stats['problem_mean']
+    
+    # Group by tone to get variance of deviations (within-question between-tone)
+    tone_variance_stats = tone_question_stats.groupby('tone_category').agg({
+        'deviation': lambda x: x.var(ddof=1) if len(x) > 1 else 0.0,
+        'count': 'sum'
+    })
+    
+    # Weight by number of samples
+    if not tone_variance_stats.empty and sum(tone_variance_stats['count']) > 0:
+        between_tone_variance = np.average(
+            tone_variance_stats['deviation'], 
+            weights=tone_variance_stats['count']
+        )
+    else:
+        between_tone_variance = 0.0
+    
+    # Calculate residual (within) variance
+    residual_variance = max(0.0, total_variance - between_question_variance - between_tone_variance)
+    
+    return {
+        "total_variance": float(total_variance),
+        "between_question_variance": float(between_question_variance),
+        "between_tone_variance": float(between_tone_variance),
+        "residual_variance": float(residual_variance),
+        "variance_explained_by_question": float(between_question_variance / total_variance if total_variance > 0 else 0),
+        "variance_explained_by_tone": float(between_tone_variance / total_variance if total_variance > 0 else 0)
+    }
+
+
+def process_pass_at_k(df: pd.DataFrame, k: int) -> pd.DataFrame:
+    """Process dataframe to calculate pass@k metrics for variance analysis."""
+    # Group by tone and problem_id
+    pass_at_k_results = []
+    
+    for (tone, problem), group in df.groupby(['tone_category', 'problem_id']):
+        sorted_group = group.sort_values('solution_idx')
+        solutions_to_check = min(k, len(sorted_group))
+        
+        # Check if any of the first k solutions pass
+        passes = any(sorted_group.iloc[:solutions_to_check]['graded']) if solutions_to_check > 0 else False
+        
+        pass_at_k_results.append({
+            'tone_category': tone,
+            'problem_id': problem,
+            'pass_at_k': 1.0 if passes else 0.0,
+            'count': solutions_to_check
+        })
+    
+    return pd.DataFrame(pass_at_k_results)
+
+
 def aggregate_metrics(all_results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Aggregate metrics across all results with variance analysis."""
+    """Aggregate metrics across all results with variance analysis by research question."""
     # Convert to DataFrame for easier analysis
     all_solutions = []
     
@@ -281,227 +793,24 @@ def aggregate_metrics(all_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     # Create DataFrame
     df = pd.DataFrame(all_solutions)
     
-    # Prepare aggregation structure
+    # Basic stats
     aggregation = {
         "overall": {
             "total_problems": len(df['problem_id'].unique()),
             "total_solutions": len(df),
-            "metrics_summary": {}
-        },
-        "by_tone": {},
-        "by_difficulty": {},
-        "by_platform": {},
-        "variance_analysis": {}
+            "tones": list(df['tone_category'].unique())
+        }
     }
     
-    # Calculate pass@1 and pass@5 rates by tone
-    pass_rates = df.groupby(['tone_category', 'problem_id']).agg(
-        first_solution_passed=('graded', lambda x: x.iloc[0] == True),
-        any_solution_passed=('graded', lambda x: any(x == True))
-    ).reset_index()
+    # Aggregate metrics by research question
+    aggregation["research_questions"] = aggregate_metrics_by_rq(df)
     
-    tone_performance = pass_rates.groupby('tone_category').agg(
-        pass_at_1_rate=('first_solution_passed', 'mean'),
-        pass_at_5_rate=('any_solution_passed', 'mean'),
-        problem_count=('problem_id', 'count')
-    ).reset_index()
+    # Calculate per-question metrics and variance
+    aggregation["per_question"] = calculate_per_question_metrics(df)
     
-    # Add to aggregation
-    aggregation["overall"]["pass_at_1_rate"] = pass_rates['first_solution_passed'].mean()
-    aggregation["overall"]["pass_at_5_rate"] = pass_rates['any_solution_passed'].mean()
-    
-    # Add variance analysis for pass@1 and pass@5
-    aggregation["overall"]["pass_at_1_variance"] = pass_rates['first_solution_passed'].var(ddof=1)
-    aggregation["overall"]["pass_at_5_variance"] = pass_rates['any_solution_passed'].var(ddof=1)
-    
-    # Calculate per-tone variance for pass@1 and pass@5
-    tone_pass_variance = pass_rates.groupby('tone_category').agg(
-        pass_at_1_variance=('first_solution_passed', lambda x: x.var(ddof=1) if len(x) > 1 else 0),
-        pass_at_5_variance=('any_solution_passed', lambda x: x.var(ddof=1) if len(x) > 1 else 0)
-    ).reset_index()
-    
-    # Calculate metrics for each tone
-    for tone, tone_df in df.groupby('tone_category'):
-        tone_metrics = {}
-        
-        # Numeric metrics only
-        numeric_cols = [col for col in tone_df.columns if 
-                       col not in ['problem_id', 'problem_title', 'solution_idx', 'graded', 
-                                  'difficulty', 'platform', 'tone_category', 'model_name',
-                                  'error_code', 'error_message'] and 
-                       pd.api.types.is_numeric_dtype(tone_df[col])]
-        
-        for metric in numeric_cols:
-            if not tone_df[metric].empty:
-                tone_metrics[metric] = {
-                    "mean": tone_df[metric].mean(),
-                    "median": tone_df[metric].median(),
-                    "min": tone_df[metric].min(),
-                    "max": tone_df[metric].max(),
-                    "stddev": tone_df[metric].std()
-                }
-        
-        # Get pass rates for this tone
-        tone_pass = tone_performance[tone_performance['tone_category'] == tone]
-        tone_var = tone_pass_variance[tone_pass_variance['tone_category'] == tone]
-        
-        aggregation["by_tone"][tone] = {
-            "total_problems": tone_pass['problem_count'].iloc[0] if not tone_pass.empty else 0,
-            "total_solutions": len(tone_df),
-            "pass_at_1_rate": tone_pass['pass_at_1_rate'].iloc[0] if not tone_pass.empty else 0,
-            "pass_at_5_rate": tone_pass['pass_at_5_rate'].iloc[0] if not tone_pass.empty else 0,
-            "pass_at_1_variance": tone_var['pass_at_1_variance'].iloc[0] if not tone_var.empty else 0,
-            "pass_at_5_variance": tone_var['pass_at_5_variance'].iloc[0] if not tone_var.empty else 0,
-            "metrics": tone_metrics
-        }
-    
-    # Calculate between-question and within-question variance for key metrics
-    key_metrics = ["avg_cyclomatic_complexity", "pylint_score", "raw_lloc"]
-    variance_analysis = {}
-    
-    # Add variance analysis for pass@1 and pass@5
-    for pass_metric, column in [("pass@1", "first_solution_passed"), ("pass@5", "any_solution_passed")]:
-        # Total variance
-        total_variance = pass_rates[column].var(ddof=1)
-        
-        # Calculate grand mean
-        grand_mean = pass_rates[column].mean()
-        
-        # Between-tone variance
-        tone_means = pass_rates.groupby('tone_category')[column].mean()
-        tone_counts = pass_rates.groupby('tone_category')[column].count()
-        
-        if len(tone_means) > 1:
-            # Weighted calculation of between-tone variance
-            weights = tone_counts
-            means = tone_means
-            weighted_mean_of_squares = np.average((means - grand_mean) ** 2, weights=weights)
-            between_tone_variance = weighted_mean_of_squares * (sum(weights) / (sum(weights) - 1))
-            between_tone_variance = min(between_tone_variance, total_variance)
-        else:
-            between_tone_variance = 0.0
-            
-        # Within-tone variance (how consistent each tone is across different questions)
-        within_variance_by_tone = {}
-        for tone, tone_data in pass_rates.groupby('tone_category'):
-            if len(tone_data) > 1:
-                tone_variance = tone_data[column].var(ddof=1)
-                within_variance_by_tone[tone] = float(tone_variance)
-            else:
-                within_variance_by_tone[tone] = 0.0
-                
-        variance_analysis[pass_metric] = {
-            "total_variance": float(total_variance) if pd.notna(total_variance) else 0.0,
-            "between_tone_variance": float(between_tone_variance),
-            "within_tone_variance_by_tone": within_variance_by_tone
-        }
-    
-    # Continue with existing variance analysis for other metrics
-    for metric in key_metrics:
-        if metric in df.columns:
-            # Drop NaN values for consistent calculations
-            valid_data = df[~df[metric].isna()]
-            if valid_data.empty:
-                continue
-                
-            # Total variance with explicit ddof=1 for sample variance
-            total_variance = valid_data[metric].var(ddof=1)
-            
-            # Calculate grand mean
-            grand_mean = valid_data[metric].mean()
-            
-            # Group by problem_id and calculate means and counts
-            problem_stats = valid_data.groupby('problem_id').agg({
-                metric: ['mean', 'count']
-            })
-            problem_stats.columns = ['mean', 'count']
-            
-            # Calculate between-question variance properly (weighted)
-            if len(problem_stats) > 1:
-                # Weighted calculation of between-question variance
-                weights = problem_stats['count']
-                means = problem_stats['mean']
-                weighted_mean_of_squares = np.average((means - grand_mean) ** 2, weights=weights)
-                between_question_variance = weighted_mean_of_squares * (sum(weights) / (sum(weights) - 1))
-                
-                # Ensure between variance is not larger than total variance due to numerical issues
-                between_question_variance = min(between_question_variance, total_variance)
-            else:
-                between_question_variance = 0.0
-            
-            # Within-question variance by tone (random slopes)
-            within_variance_by_tone = {}
-            
-            for tone, tone_df in valid_data.groupby('tone_category'):
-                # Calculate how each tone's effect varies across questions
-                tone_effects = []
-                
-                for problem, problem_df in tone_df.groupby('problem_id'):
-                    if len(problem_df) > 0:
-                        # Get the problem mean from our stats DataFrame
-                        if problem in problem_stats.index:
-                            problem_mean = problem_stats.loc[problem, 'mean']
-                            tone_problem_mean = problem_df[metric].mean()
-                            tone_effect = tone_problem_mean - problem_mean
-                            tone_effects.append(tone_effect)
-                
-                # Calculate variance if we have enough data points (at least 2)
-                if len(tone_effects) > 1:
-                    within_variance_by_tone[tone] = float(np.var(tone_effects, ddof=1))
-                elif len(tone_effects) == 1:
-                    # If only one data point, variance is 0
-                    within_variance_by_tone[tone] = 0.0
-                else:
-                    # No valid data points, set to 0
-                    within_variance_by_tone[tone] = 0.0
-            
-            variance_analysis[metric] = {
-                "total_variance": float(total_variance) if pd.notna(total_variance) else 0.0,
-                "between_question_variance": float(between_question_variance),
-                "within_question_variance_by_tone": within_variance_by_tone
-            }
-    
-    aggregation["variance_analysis"]["pass_metrics"] = variance_analysis
-    
-    # Tone rankings based on pass@1 and pass@5
-    top_tone_pass1 = tone_performance.loc[tone_performance['pass_at_1_rate'].idxmax()]
-    worst_tone_pass1 = tone_performance.loc[tone_performance['pass_at_1_rate'].idxmin()]
-    top_tone_pass5 = tone_performance.loc[tone_performance['pass_at_5_rate'].idxmax()]
-    worst_tone_pass5 = tone_performance.loc[tone_performance['pass_at_5_rate'].idxmin()]
-    
-    aggregation["tone_rankings"] = {
-        "by_pass_at_1": tone_performance.sort_values('pass_at_1_rate', ascending=False)[['tone_category', 'pass_at_1_rate']].values.tolist(),
-        "by_pass_at_5": tone_performance.sort_values('pass_at_5_rate', ascending=False)[['tone_category', 'pass_at_5_rate']].values.tolist(),
-        "top_performing_tone_pass1": top_tone_pass1['tone_category'],
-        "lowest_performing_tone_pass1": worst_tone_pass1['tone_category'],
-        "top_performing_tone_pass5": top_tone_pass5['tone_category'],
-        "lowest_performing_tone_pass5": worst_tone_pass5['tone_category']
-    }
-    
-    # Add summary statistics for key metrics
-    aggregation["key_metrics_by_tone"] = {}
-    for metric in key_metrics:
-        if metric in df.columns:
-            aggregation["key_metrics_by_tone"][metric] = df.groupby('tone_category')[metric].mean().to_dict()
-    
-    # Calculate overall metrics summaries
-    for metric in numeric_cols:
-        aggregation["overall"]["metrics_summary"][metric] = {
-            "mean": df[metric].mean(),
-            "median": df[metric].median(),
-            "min": df[metric].min(),
-            "max": df[metric].max(),
-            "stddev": df[metric].std()
-        }
-    
-    # Add error type analysis - FIX: create a proper copy of the DataFrame
-    if 'error_message' in df.columns:
-        error_df = df[df['error_message'].notna()].copy()  # Create an explicit copy
-        if not error_df.empty:
-            error_df['error_type'] = error_df['error_message'].apply(
-                lambda x: x.split(':')[0] if isinstance(x, str) and ':' in x else 'Unknown')
-            error_counts = error_df['error_type'].value_counts().to_dict()
-            aggregation["overall"]["error_types"] = error_counts
+    # Calculate overall variance components for each metric (between-question, between-tone, within)
+    variance_components = calculate_variance_components(df)
+    aggregation["variance_components"] = variance_components
     
     return aggregation
 
