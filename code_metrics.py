@@ -302,27 +302,27 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
     
     print(f"Processing file with tone: {tone_category}, model: {model_name}")
     
-    # Load data
+    # Load eval_all.json data
     with open(file_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
     results = {}
     pass_at_1_count = 0
-    pass_at_5_count = 0    # new counter for pass@5
-    pass_at_10_count = 0   # new counter for pass@10
+    pass_at_5_count = 0
+    pass_at_10_count = 0
     total_problems = 0
     
     for problem_idx, problem in enumerate(data):
         problem_id = problem.get('question_id', f"problem_{problem_idx}")
         problem_metrics = []
         
-        # Track pass@1 if available
+        # Use pass@1 from the file if available
         pass_at_1 = problem.get('pass@1', None)
         if pass_at_1 is not None:
             pass_at_1_count += pass_at_1
             total_problems += 1
         
-        # Track pass@5 and pass@10, similar to pass@1
+        # Also accumulate fallback counts for pass@5 and pass@10 in case the eval file isn’t found
         pass_at_5 = problem.get('pass@5', None)
         if pass_at_5 is not None:
             pass_at_5_count += pass_at_5
@@ -350,9 +350,9 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
                          if solution_idx < len(problem.get('graded_list', [])) else None,
                 'tone_category': tone_category,
                 'model_name': model_name,
-                'pass@1': problem.get('pass@1', None),  # added pass@1 to metadata
-                'pass@5': problem.get('pass@5', None),  # added pass@5 to metadata
-                'pass@10': problem.get('pass@10', None)  # added pass@10 to metadata
+                'pass@1': problem.get('pass@1', None),
+                'pass@5': problem.get('pass@5', None),
+                'pass@10': problem.get('pass@10', None)
             }
             
             # Merge metric data with metadata
@@ -376,14 +376,32 @@ def process_eval_all_json(file_path: str) -> Dict[str, Any]:
             
         if problem_metrics:
             results[problem_id] = problem_metrics
-    
+
+    # Try to load the corresponding eval.json file for accurate pass@ metrics.
+    eval_file_path = file_path.replace('_eval_all.json', '_eval.json')
+    if os.path.exists(eval_file_path):
+        try:
+            with open(eval_file_path, 'r', encoding='utf-8') as ef:
+                eval_data = json.load(ef)
+            if isinstance(eval_data, list) and len(eval_data) > 0 and isinstance(eval_data[0], dict):
+                eval_metrics = eval_data[0]
+                overall_pass_at_1 = eval_metrics.get("pass@1", None)
+                overall_pass_at_5 = eval_metrics.get("pass@5", None)
+                overall_pass_at_10 = eval_metrics.get("pass@10", None)
+            else:
+                overall_pass_at_1 = overall_pass_at_5 = overall_pass_at_10 = None
+        except Exception:
+            overall_pass_at_1 = overall_pass_at_5 = overall_pass_at_10 = None
+    else:
+        overall_pass_at_1 = overall_pass_at_5 = overall_pass_at_10 = None
+
     return {
         "tone_category": tone_category,
         "model_name": model_name,
         "results": results,
-        "pass_at_1_count": pass_at_1_count,
-        "pass_at_5_count": pass_at_5_count,    # returning pass@5 count
-        "pass_at_10_count": pass_at_10_count,   # returning pass@10 count
+        "pass_at_1": overall_pass_at_1 if overall_pass_at_1 is not None else pass_at_1_count,
+        "pass_at_5": overall_pass_at_5 if overall_pass_at_5 is not None else pass_at_5_count,
+        "pass_at_10": overall_pass_at_10 if overall_pass_at_10 is not None else pass_at_10_count,
         "total_problems": total_problems
     }
 
